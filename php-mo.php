@@ -15,7 +15,7 @@
  * More info:
  * https://github.com/josscrowcroft/php.mo
  * 
- * Based on php-msgfmt by Matthias Bauer (Copyright © 2007), a command-line PHP tool
+ * Based on php-msgfmt by Matthias Bauer (Copyright Â© 2007), a command-line PHP tool
  * for converting .po files to .mo.
  * (http://wordpress-soc-2007.googlecode.com/svn/trunk/moeffju/php-msgfmt/msgfmt.php)
  * 
@@ -68,6 +68,7 @@ function phpmo_parse_po_file($in) {
 	$temp = array ();
 	// state
 	$state = null;
+	$last = null;
 	$fuzzy = false;
 
 	// iterate over lines
@@ -77,6 +78,7 @@ function phpmo_parse_po_file($in) {
 			continue;
 
 		list ($key, $data) = preg_split('/\s/', $line, 2);
+		error_log('>>>>>>>>> reading key ' . $key . ' for data ' . $data);
 		
 		switch ($key) {
 			case '#,' : // flag...
@@ -93,6 +95,7 @@ function phpmo_parse_po_file($in) {
 					$state = null;
 					$fuzzy = false;
 				}
+				error_log('>>>>>>>>> state ' . $state);
 				break;
 			case 'msgctxt' :
 				// context
@@ -102,17 +105,24 @@ function phpmo_parse_po_file($in) {
 				// untranslated-string-plural
 				$state = $key;
 				$temp[$state] = $data;
+				error_log('>>>>>>>>> state ' . $state);
+				error_log('>>>>>>>>> data ' . $data);
 				break;
 			case 'msgstr' :
 				// translated-string
 				$state = 'msgstr';
+			    $temp[$state] = array();
 				$temp[$state][] = $data;
+				error_log('>>>>>>>>> msgstr state ' . $state);
+				error_log('>>>>>>>>> msgstr data ' . $data);
 				break;
 			default :
 				if (strpos($key, 'msgstr[') !== FALSE) {
 					// translated-string-case-n
 					$state = 'msgstr';
 					$temp[$state][] = $data;
+					error_log('>>>>>>>>> default state ' . $state);
+					error_log('>>>>>>>>> default data ' . $data);
 				} else {
 					// continued lines
 					switch ($state) {
@@ -120,24 +130,37 @@ function phpmo_parse_po_file($in) {
 						case 'msgid' :
 						case 'msgid_plural' :
 							$temp[$state] .= "\n" . $line;
+							error_log('>>>>>>>>> state ' . $state);
+							error_log('>>>>>>>>> line ' . $line);
 							break;
 						case 'msgstr' :
 							$temp[$state][sizeof($temp[$state]) - 1] .= "\n" . $line;
+							error_log('>>>>>>>>> state ' . $state);
+							error_log('>>>>>>>>> line ' . $line);
 							break;
 						default :
 							// parse error
 							fclose($fh);
+							error_log('>>>>>>>>>>>>>>>>>> parse error ');
 							return FALSE;
 					}
 				}
 				break;
 		}
+		if ($state != $last)
+		{
+			$hash[] = $temp;
+			$last = $state;
+		}
+
 	}
 	fclose($fh);
 	
 	// add final entry
 	if ($state == 'msgstr')
 		$hash[] = $temp;
+
+	error_log('>>>>>>>>>>>>>>>>>> hash length before cleanning ' . sizeof($hash));
 
 	// Cleanup data, merge multiline entries, reindex hash for ksort
 	$temp = $hash;
@@ -153,6 +176,7 @@ function phpmo_parse_po_file($in) {
 		$hash[$entry['msgid']] = $entry;
 	}
 
+	('>>>>>>>>>>>>>>>>>> hash length after cleanning ' . sizeof($hash));
 	return $hash;
 }
 
@@ -162,14 +186,19 @@ function phpmo_write_mo_file($hash, $out) {
 	// sort by msgid
 	ksort($hash, SORT_STRING);
 	// our mo file data
+	error_log('>>>>>>>>>>>>>>>>>> hash length after ksort ' . sizeof($hash));
 	$mo = '';
 	// header data
 	$offsets = array ();
 	$ids = '';
 	$strings = '';
+	$processed = 0;
+
+	error_log('>>>>>>>>>>>>>>>>>> hash length before writting ' . sizeof($hash));
 
 	foreach ($hash as $entry) {
 		$id = $entry['msgid'];
+		error_log('>>>>>>>>> processing ' . $id);
 		if (isset ($entry['msgid_plural']))
 			$id .= "\x00" . $entry['msgid_plural'];
 		// context is merged into id, separated by EOT (\x04)
@@ -184,6 +213,9 @@ function phpmo_write_mo_file($hash, $out) {
 		// plural msgids are not stored (?)
 		$ids .= $id . "\x00";
 		$strings .= $str . "\x00";
+		$processed++;
+		error_log('>>>>>>>>> written ' . $str);
+		error_log('>>>>>>>>> processed ' . $processed);
 	}
 
 	// keys start after the header (7 words) + index tables ($#hash * 4 words)
