@@ -15,7 +15,7 @@
  * More info:
  * https://github.com/josscrowcroft/php.mo
  * 
- * Based on php-msgfmt by Matthias Bauer (Copyright © 2007), a command-line PHP tool
+ * Based on php-msgfmt by Matthias Bauer (Copyright Â© 2007), a command-line PHP tool
  * for converting .po files to .mo.
  * (http://wordpress-soc-2007.googlecode.com/svn/trunk/moeffju/php-msgfmt/msgfmt.php)
  * 
@@ -106,6 +106,7 @@ function phpmo_parse_po_file($in) {
 			case 'msgstr' :
 				// translated-string
 				$state = 'msgstr';
+			    $temp[$state] = array();
 				$temp[$state][] = $data;
 				break;
 			default :
@@ -122,22 +123,27 @@ function phpmo_parse_po_file($in) {
 							$temp[$state] .= "\n" . $line;
 							break;
 						case 'msgstr' :
-							$temp[$state][sizeof($temp[$state]) - 1] .= "\n" . $line;
+							//$temp[$state][sizeof($temp[$state]) - 1] .= "\n" . $line;
+							$temp[$state][] = $line;
 							break;
 						default :
 							// parse error
 							fclose($fh);
+							error_log('ERROR: parse error');
 							return FALSE;
 					}
 				}
 				break;
 		}
+		$hash[] = $temp;
+
 	}
 	fclose($fh);
 	
 	// add final entry
 	if ($state == 'msgstr')
 		$hash[] = $temp;
+
 
 	// Cleanup data, merge multiline entries, reindex hash for ksort
 	$temp = $hash;
@@ -147,10 +153,14 @@ function phpmo_parse_po_file($in) {
 			$v = phpmo_clean_helper($v);
 			if ($v === FALSE) {
 				// parse error
+				error_log('ERROR: parse error');
 				return FALSE;
 			}
 		}
-		$hash[$entry['msgid']] = $entry;
+		
+		if (array_key_exists('msgid', $entry))
+			$hash[$entry['msgid']] = $entry;
+		// else error_log('WARN: no msgid for entry ' . print_r($entry, true));
 	}
 
 	return $hash;
@@ -165,18 +175,22 @@ function phpmo_write_mo_file($hash, $out) {
 	$mo = '';
 	// header data
 	$offsets = array ();
+	$id = '';
 	$ids = '';
 	$strings = '';
 
+
 	foreach ($hash as $entry) {
-		$id = $entry['msgid'];
+		if (array_key_exists('msgid', $entry))
+			$id = $entry['msgid'];
 		if (isset ($entry['msgid_plural']))
 			$id .= "\x00" . $entry['msgid_plural'];
 		// context is merged into id, separated by EOT (\x04)
 		if (array_key_exists('msgctxt', $entry))
 			$id = $entry['msgctxt'] . "\x04" . $id;
 		// plural msgstrs are NUL-separated
-		$str = implode("\x00", $entry['msgstr']);
+		if (array_key_exists('msgstr', $entry))
+			$str = implode($entry['msgstr']);
 		// keep track of offsets
 		$offsets[] = array (
 			strlen($ids
